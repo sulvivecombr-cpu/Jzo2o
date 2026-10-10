@@ -1,0 +1,5 @@
+# Base44 sandbox shared Elasticsearch configuration.
+jzo2o:
+  es:
+    host: elasticsearch
+    port: 9200

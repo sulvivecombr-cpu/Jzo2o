@@ -1,0 +1,5 @@
+# Base44 sandbox shared Seata configuration.
+# No Seata transaction server runs in this sandbox, so distributed transactions
+# are disabled. Local @Transactional behaviour is unaffected.
+seata:
+  enabled: false

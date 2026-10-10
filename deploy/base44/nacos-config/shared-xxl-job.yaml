@@ -1,0 +1,15 @@
+# Base44 sandbox shared XXL-JOB configuration.
+# The scheduled-job admin console is not part of this sandbox, so the executor
+# is disabled: @XxlJob handlers simply are not registered. Every cron/xxl-job
+# class that the business logic also exposes through an API keeps working.
+xxl-job:
+  enable: false
+  access-token: default_token
+  admin:
+    address: http://xxl-job-admin:8080/xxl-job-admin
+  executor:
+    app-name: ${spring.application.name}
+    ip:
+    port: 9999
+    log-path: /data/logs/xxl-job/${spring.application.name}
+    log-retention-days: 7

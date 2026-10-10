@@ -1,0 +1,411 @@
+# Base44 development environment for the jzo2o microservice platform.
+#
+# Java has no live-reload dev server, so the `builder` service compiles the
+# Maven modules from the repository (bind-mounted at /workspace) on startup and
+# publishes runnable Spring Boot jars into the `jzo2o-build` volume; every
+# application container then runs one of those jars. Rebuild + restart after
+# changing Java code:
+#
+#     docker compose -f docker-compose.base44.yml run --rm builder
+#     docker compose -f docker-compose.base44.yml restart jzo2o-foundations
+#
+# Configuration that the original project keeps in its own external Nacos
+# server is published into Nacos by the `nacos-config-init` one-shot service
+# from deploy/base44/nacos-config/.
+#
+# The repository has no browser front end, so the `web` service serves the
+# sandbox entry point on host port 3000 (a landing page plus a reverse proxy to
+# each service's context path).
+name: jzo2o
+
+x-app-environment: &app-environment
+  # Point every service at the sandbox Nacos (bootstrap-dev.yml hardcodes the
+  # original author's LAN address; environment variables win over config files).
+  SPRING_CLOUD_NACOS_SERVER_ADDR: nacos:8848
+  # No Seata transaction server runs here (see shared-spring-seata.yaml).
+  SEATA_ENABLED: "false"
+  BASE44_PREVIEW_MODE: ${BASE44_PREVIEW_MODE:-}
+  TZ: Asia/Shanghai
+
+services:
+
+  # ---------------------------------------------------------------- infrastructure
+  nacos:
+    image: nacos/nacos-server:v2.2.3
+    restart: on-failure
+    environment:
+      MODE: standalone
+      PREFER_HOST_MODE: hostname
+      JVM_XMS: 256m
+      JVM_XMX: 512m
+      NACOS_AUTH_ENABLE: "false"
+      TZ: Asia/Shanghai
+    volumes:
+      - nacos-data:/home/nacos/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8848/nacos/v1/console/health/readiness >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  mysql:
+    image: mysql:8.0
+    restart: on-failure
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+      - --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: mysql
+      TZ: Asia/Shanghai
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./deploy/base44/mysql-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -pmysql --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  redis:
+    image: redis:7
+    restart: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    restart: on-failure
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+
+  elasticsearch:
+    # Optional: `docker compose -f docker-compose.base44.yml --profile search up -d`
+    profiles: ["search"]
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.7
+    restart: on-failure
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms256m -Xmx256m
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+    sysctls:
+      - vm.max_map_count=262144
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9200/_cluster/health >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 30
+      start_period: 60s
+
+  # ---------------------------------------------------------------- setup (one-shot)
+  nacos-config-init:
+    image: python:3.12-slim
+    restart: "no"
+    environment:
+      NACOS_ADDR: http://nacos:8848
+      NACOS_NAMESPACE: 75a593f5-33e6-4c65-b2a0-18c403d20f63
+      CONFIG_DIR: /configs
+    volumes:
+      - ./deploy/base44/init-nacos.py:/init-nacos.py:ro
+      - ./deploy/base44/nacos-config:/configs:ro
+    command: ["python3", "/init-nacos.py"]
+    depends_on:
+      nacos:
+        condition: service_healthy
+
+  builder:
+    image: maven:3.8-eclipse-temurin-11
+    restart: "no"
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace
+      - jzo2o-m2:/root/.m2
+      - jzo2o-build:/build
+    command: ["sh", "/workspace/deploy/base44/build.sh"]
+
+  # ---------------------------------------------------------------- applications
+  jzo2o-gateway:
+    image: eclipse-temurin:11-jre-alpine
+    restart: on-failure
+    ports:
+      - "11500:11500"
+    environment:
+      <<: *app-environment
+    env_file:
+      - /run/base44/app.env
+    volumes:
+      - jzo2o-build:/build:ro
+    command: ["sh", "-c", "test -f /build/apps/jzo2o-gateway.jar || { echo 'jar missing: see /build/build-report.txt'; exit 1; }; exec java -Xms96m -Xmx288m -XX:MaxMetaspaceSize=224m -Xss512k -XX:+UseSerialGC -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai -jar /build/apps/jzo2o-gateway.jar"]
+    depends_on:
+      nacos: { condition: service_healthy }
+      nacos-config-init: { condition: service_completed_successfully }
+      builder: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      # Whitelisted route: proves the gateway itself answers and can route to a service.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:11500/foundations/v2/api-docs || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
+
+  jzo2o-foundations:
+    image: eclipse-temurin:11-jre-alpine
+    restart: on-failure
+    environment:
+      <<: *app-environment
+    env_file:
+      - /run/base44/app.env
+    volumes:
+      - jzo2o-build:/build:ro
+    command: ["sh", "-c", "test -f /build/apps/jzo2o-foundations.jar || { echo 'jar missing: see /build/build-report.txt'; exit 1; }; exec java -Xms96m -Xmx288m -XX:MaxMetaspaceSize=224m -Xss512k -XX:+UseSerialGC -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai -jar /build/apps/jzo2o-foundations.jar"]
+    depends_on:
+      nacos: { condition: service_healthy }
+      nacos-config-init: { condition: service_completed_successfully }
+      builder: { condition: service_completed_successfully }
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:11509/foundations/doc.html || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 150s
+
+  jzo2o-publics:
+    image: eclipse-temurin:11-jre-alpine
+    restart: on-failure
+    environment:
+      <<: *app-environment
+    env_file:
+      - /run/base44/app.env
+    volumes:
+      - jzo2o-build:/build:ro
+    command: ["sh", "-c", "test -f /build/apps/jzo2o-publics.jar || { echo 'jar missing: see /build/build-report.txt'; exit 1; }; exec java -Xms96m -Xmx288m -XX:MaxMetaspaceSize=224m -Xss512k -XX:+UseSerialGC -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai -jar /build/apps/jzo2o-publics.jar"]
+    depends_on:
+      nacos: { condition: service_healthy }
+      nacos-config-init: { condition: service_completed_successfully }
+      builder: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:11503/publics/doc.html || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 150s
+
+  jzo2o-market:
+    image: eclipse-temurin:11-jre-alpine
+    restart: on-failure
+    environment:
+      <<: *app-environment
+    env_file:
+      - /run/base44/app.env
+    volumes:
+      - jzo2o-build:/build:ro
+    command: ["sh", "-c", "test -f /build/apps/jzo2o-market.jar || { echo 'jar missing: see /build/build-report.txt'; exit 1; }; exec java -Xms96m -Xmx288m -XX:MaxMetaspaceSize=224m -Xss512k -XX:+UseSerialGC -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai -jar /build/apps/jzo2o-market.jar"]
+    depends_on:
+      nacos: { condition: service_healthy }
+      nacos-config-init: { condition: service_completed_successfully }
+      builder: { condition: service_completed_successfully }
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:11510/market/doc.html || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 150s
+
+  jzo2o-trade:
+    image: eclipse-temurin:11-jre-alpine
+    restart: on-failure
+    environment:
+      <<: *app-environment
+    env_file:
+      - /run/base44/app.env
+    volumes:
+      - jzo2o-build:/build:ro
+    command: ["sh", "-c", "test -f /build/apps/jzo2o-trade.jar || { echo 'jar missing: see /build/build-report.txt'; exit 1; }; exec java -Xms96m -Xmx288m -XX:MaxMetaspaceSize=224m -Xss512k -XX:+UseSerialGC -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai -jar /build/apps/jzo2o-trade.jar"]
+    depends_on:
+      nacos: { condition: service_healthy }
+      nacos-config-init: { condition: service_completed_successfully }
+      builder: { condition: service_completed_successfully }
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:11505/trade/doc.html || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 150s
+
+  jzo2o-orders-manager:
+    image: eclipse-temurin:11-jre-alpine
+    restart: on-failure
+    environment:
+      <<: *app-environment
+    env_file:
+      - /run/base44/app.env
+    volumes:
+      - jzo2o-build:/build:ro
+    command: ["sh", "-c", "test -f /build/apps/jzo2o-orders-manager.jar || { echo 'jar missing: see /build/build-report.txt'; exit 1; }; exec java -Xms96m -Xmx288m -XX:MaxMetaspaceSize=224m -Xss512k -XX:+UseSerialGC -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai -jar /build/apps/jzo2o-orders-manager.jar"]
+    depends_on:
+      nacos: { condition: service_healthy }
+      nacos-config-init: { condition: service_completed_successfully }
+      builder: { condition: service_completed_successfully }
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:11504/orders-manager/doc.html || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 150s
+
+  jzo2o-orders-seize:
+    image: eclipse-temurin:11-jre-alpine
+    restart: on-failure
+    environment:
+      <<: *app-environment
+    env_file:
+      - /run/base44/app.env
+    volumes:
+      - jzo2o-build:/build:ro
+    command: ["sh", "-c", "test -f /build/apps/jzo2o-orders-seize.jar || { echo 'jar missing: see /build/build-report.txt'; exit 1; }; exec java -Xms96m -Xmx288m -XX:MaxMetaspaceSize=224m -Xss512k -XX:+UseSerialGC -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai -jar /build/apps/jzo2o-orders-seize.jar"]
+    depends_on:
+      nacos: { condition: service_healthy }
+      nacos-config-init: { condition: service_completed_successfully }
+      builder: { condition: service_completed_successfully }
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:11506/orders-seize/doc.html || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 150s
+
+  jzo2o-orders-dispatch:
+    image: eclipse-temurin:11-jre-alpine
+    restart: on-failure
+    environment:
+      <<: *app-environment
+    env_file:
+      - /run/base44/app.env
+    volumes:
+      - jzo2o-build:/build:ro
+    command: ["sh", "-c", "test -f /build/apps/jzo2o-orders-dispatch.jar || { echo 'jar missing: see /build/build-report.txt'; exit 1; }; exec java -Xms96m -Xmx288m -XX:MaxMetaspaceSize=224m -Xss512k -XX:+UseSerialGC -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai -jar /build/apps/jzo2o-orders-dispatch.jar"]
+    depends_on:
+      nacos: { condition: service_healthy }
+      nacos-config-init: { condition: service_completed_successfully }
+      builder: { condition: service_completed_successfully }
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:11507/orders-dispatch/doc.html || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 150s
+
+  jzo2o-orders-history:
+    image: eclipse-temurin:11-jre-alpine
+    restart: on-failure
+    environment:
+      <<: *app-environment
+    env_file:
+      - /run/base44/app.env
+    volumes:
+      - jzo2o-build:/build:ro
+    command: ["sh", "-c", "test -f /build/apps/jzo2o-orders-history.jar || { echo 'jar missing: see /build/build-report.txt'; exit 1; }; exec java -Xms96m -Xmx288m -XX:MaxMetaspaceSize=224m -Xss512k -XX:+UseSerialGC -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai -jar /build/apps/jzo2o-orders-history.jar"]
+    depends_on:
+      nacos: { condition: service_healthy }
+      nacos-config-init: { condition: service_completed_successfully }
+      builder: { condition: service_completed_successfully }
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:11508/orders-history/doc.html || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 150s
+
+  jzo2o-customer:
+    # Needs the private artifact cn.xiaozhibang:evaluation-sdk:1.0-SNAPSHOT, which
+    # is not published publicly, so the module cannot be built here yet. Enable
+    # with `--profile customer` once that jar/dependency is available.
+    profiles: ["customer"]
+    image: eclipse-temurin:11-jre-alpine
+    restart: on-failure
+    environment:
+      <<: *app-environment
+    env_file:
+      - /run/base44/app.env
+    volumes:
+      - jzo2o-build:/build:ro
+    command: ["sh", "-c", "test -f /build/apps/jzo2o-customer.jar || { echo 'jar missing: see /build/build-report.txt'; exit 1; }; exec java -Xms96m -Xmx288m -XX:MaxMetaspaceSize=224m -Xss512k -XX:+UseSerialGC -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai -jar /build/apps/jzo2o-customer.jar"]
+    depends_on:
+      nacos: { condition: service_healthy }
+      nacos-config-init: { condition: service_completed_successfully }
+      builder: { condition: service_completed_successfully }
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:11502/customer/doc.html || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 150s
+
+  # ---------------------------------------------------------------- web entry point
+  web:
+    image: nginx:alpine
+    restart: on-failure
+    ports:
+      - "3000:80"
+    volumes:
+      - ./deploy/base44/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/base44/nginx/index.html:/usr/share/nginx/html/index.html:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  nacos-data:
+  mysql-data:
+  rabbitmq-data:
+  es-data:
+  jzo2o-m2:
+  jzo2o-build:

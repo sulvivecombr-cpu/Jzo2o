@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>家缘优选 · jzo2o 微服务</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 40px 24px 64px;
+    font: 15px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+    background: #f5f7fa; color: #1f2933;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  h1 { font-size: 26px; margin: 0 0 6px; }
+  .sub { color: #5b6b7c; margin: 0 0 28px; }
+  .note {
+    background: #fff; border: 1px solid #e3e8ee; border-left: 4px solid #3b7ddd;
+    border-radius: 8px; padding: 14px 18px; margin-bottom: 28px; color: #3c4a5a;
+  }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+  .card {
+    background: #fff; border: 1px solid #e3e8ee; border-radius: 8px;
+    padding: 16px 18px; display: flex; flex-direction: column; gap: 4px;
+  }
+  .card .name { font-weight: 600; font-size: 16px; }
+  .card .ctx { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; color: #6b7c8f; }
+  .card .desc { color: #5b6b7c; font-size: 13.5px; }
+  .card a { margin-top: 10px; color: #2b6cb0; text-decoration: none; font-weight: 500; }
+  .card a:hover { text-decoration: underline; }
+  footer { margin-top: 32px; color: #8494a5; font-size: 13px; }
+  code { background: #eef2f6; border-radius: 4px; padding: 1px 5px; font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>家缘优选 · jzo2o</h1>
+  <p class="sub">家政服务 O2O 平台 — Spring Cloud Alibaba 微服务后端</p>
+
+  <div class="note">
+    此仓库只包含后端微服务（PC 运营端 / 机构端、APP、小程序前端不在此仓库中）。
+    下方每个服务都通过 <code>/&lt;context-path&gt;/doc.html</code> 暴露 Knife4j 接口文档，
+    可以直接在此页面浏览、调试真实接口。
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <span class="name">运营基础服务</span>
+      <span class="ctx">jzo2o-foundations · /foundations</span>
+      <span class="desc">服务、区域、服务项管理</span>
+      <a href="/foundations/doc.html">打开接口文档 →</a>
+    </div>
+    <div class="card">
+      <span class="name">客户中心</span>
+      <span class="ctx">jzo2o-customer · /customer</span>
+      <span class="desc">客户、服务人员、机构、地址簿</span>
+      <a href="/customer/doc.html">打开接口文档 →</a>
+    </div>
+    <div class="card">
+      <span class="name">通用服务</span>
+      <span class="ctx">jzo2o-publics · /publics</span>
+      <span class="desc">短信验证码、地图、通用能力</span>
+      <a href="/publics/doc.html">打开接口文档 →</a>
+    </div>
+    <div class="card">
+      <span class="name">订单管理</span>
+      <span class="ctx">jzo2o-orders-manager · /orders-manager</span>
+      <span class="desc">订单生命周期与状态</span>
+      <a href="/orders-manager/doc.html">打开接口文档 →</a>
+    </div>
+    <div class="card">
+      <span class="name">交易服务</span>
+      <span class="ctx">jzo2o-trade · /trade</span>
+      <span class="desc">交易、支付、退款</span>
+      <a href="/trade/doc.html">打开接口文档 →</a>
+    </div>
+    <div class="card">
+      <span class="name">抢单服务</span>
+      <span class="ctx">jzo2o-orders-seize · /orders-seize</span>
+      <span class="desc">抢单池</span>
+      <a href="/orders-seize/doc.html">打开接口文档 →</a>
+    </div>
+    <div class="card">
+      <span class="name">派单服务</span>
+      <span class="ctx">jzo2o-orders-dispatch · /orders-dispatch</span>
+      <span class="desc">派单池与派单调度</span>
+      <a href="/orders-dispatch/doc.html">打开接口文档 →</a>
+    </div>
+    <div class="card">
+      <span class="name">历史订单</span>
+      <span class="ctx">jzo2o-orders-history · /orders-history</span>
+      <span class="desc">历史订单、数据冷热分离</span>
+      <a href="/orders-history/doc.html">打开接口文档 →</a>
+    </div>
+    <div class="card">
+      <span class="name">促销中心</span>
+      <span class="ctx">jzo2o-market · /market</span>
+      <span class="desc">优惠券、活动管理</span>
+      <a href="/market/doc.html">打开接口文档 →</a>
+    </div>
+  </div>
+
+  <footer>
+    沙箱入口（Base44 preview）。网关服务监听宿主机端口 <code>11500</code>，
+    基础设施：Nacos <code>8848</code>、MySQL <code>3306</code>、Redis <code>6379</code>、RabbitMQ <code>5672</code>。
+  </footer>
+</div>
+</body>
+</html>

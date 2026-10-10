@@ -1,0 +1,27 @@
+# Base44 sandbox shared RabbitMQ configuration.
+spring:
+  rabbitmq:
+    host: rabbitmq
+    port: 5672
+    username: guest
+    password: guest
+    virtual-host: /
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 1
+        concurrency: 1
+        max-concurrency: 4
+
+rabbit-mq:
+  enable: true
+  recoverer:
+    error:
+      routing-key: error.rounting-key
+      exchange: error.exchange
+      queue: error.queue
+      white-list:
+        - orders.create
+        - orders.seize

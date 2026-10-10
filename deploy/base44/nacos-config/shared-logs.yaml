@@ -1,0 +1,6 @@
+# Base44 sandbox shared logging configuration (gateway).
+logging:
+  level:
+    root: info
+    com.jzo2o: debug
+    org.springframework.cloud.gateway: info

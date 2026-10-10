@@ -1,0 +1,18 @@
+# Base44 sandbox configuration for jzo2o-trade (data-id: jzo2o-trade-dev.yaml).
+# jzo2o-trade's bootstrap.yml references these keys through placeholders
+# (${job.trading.count} ... ${qrcode.width}); in the original deployment they
+# come from this same Nacos data-id.
+
+job:
+  trading:
+    count: 100
+  refund:
+    count: 100
+
+qrcode:
+  margin: 2
+  fore-color: "#000000"
+  back-color: "#ffffff"
+  error-correction-level: M
+  width: 300
+  height: 300

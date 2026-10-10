@@ -1,0 +1,3 @@
+# Base44 sandbox configuration for jzo2o-foundations (data-id: jzo2o-foundations-dev.yaml).
+jzo2o:
+  jwt-key: jzo2o-base44-dev-jwt-key

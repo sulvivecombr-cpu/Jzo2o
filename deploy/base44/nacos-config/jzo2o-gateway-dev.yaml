@@ -1,0 +1,10 @@
+# Base44 sandbox configuration for jzo2o-gateway (data-id: jzo2o-gateway-dev.yaml).
+# JWT signing keys. In this sandbox one development key is shared by every user
+# type so that tokens issued by jzo2o-customer / jzo2o-foundations verify at the
+# gateway. The original deployment used a distinct key per client (1..4).
+jzo2o:
+  token-key:
+    "1": jzo2o-base44-dev-jwt-key
+    "2": jzo2o-base44-dev-jwt-key
+    "3": jzo2o-base44-dev-jwt-key
+    "4": jzo2o-base44-dev-jwt-key

@@ -1,0 +1,5 @@
+# Base44 sandbox shared Spring configuration (gateway).
+spring:
+  main:
+    allow-bean-definition-overriding: true
+    allow-circular-references: true

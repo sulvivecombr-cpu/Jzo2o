@@ -1,0 +1,25 @@
+# Base44 sandbox configuration for jzo2o-publics (data-id: jzo2o-publics-dev.yaml).
+#
+# jzo2o-publics injects the map / WeChat / object-storage clients directly into
+# its controllers, so the three integrations must be enabled for the service to
+# start. Every value falls back to a development placeholder, keeping the
+# application bootable without credentials; set the matching environment
+# variables (Base44 secrets: AMAP_KEY, TENCENT_WECHAT_*, ALI_OSS_*) to make the
+# real integrations work.
+amap:
+  enable: true
+  key: ${AMAP_KEY:base44-dev-placeholder}
+
+ali:
+  oss:
+    enable: true
+    endpoint: ${ALI_OSS_ENDPOINT:https://oss-cn-hangzhou.aliyuncs.com}
+    access-key-id: ${ALI_OSS_ACCESS_KEY_ID:base44-dev-placeholder}
+    access-key-secret: ${ALI_OSS_ACCESS_KEY_SECRET:base44-dev-placeholder}
+    bucket-name: ${ALI_OSS_BUCKET_NAME:base44-dev-bucket}
+
+tencent:
+  wechat:
+    enable: true
+    app-id: ${TENCENT_WECHAT_APP_ID:base44-dev-placeholder}
+    secret: ${TENCENT_WECHAT_SECRET:base44-dev-placeholder}

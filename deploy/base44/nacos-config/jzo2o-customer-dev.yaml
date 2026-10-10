@@ -1,0 +1,15 @@
+# Base44 sandbox configuration for jzo2o-customer (data-id: jzo2o-customer-dev.yaml).
+jzo2o:
+  # Shared development JWT signing key, see jzo2o-gateway-dev.yaml
+  jwt-key: jzo2o-base44-dev-jwt-key
+  # The evaluation ("评价系统") integration is an external SaaS. These are local
+  # development placeholders; scoring calls fail until real credentials are set.
+  evaluation:
+    app-id: base44-dev-app
+    access-key-id: base44-dev-access-key
+    access-key-secret: base44-dev-access-secret
+    domain: http://127.0.0.1:18080
+    serve-item:
+      target-type-id: "1"
+    serve-provider:
+      target-type-id: "2"

@@ -1,0 +1,14 @@
+# Base44 sandbox shared MySQL configuration.
+# In the original project this data-id lives in an external Nacos server; the
+# sandbox publishes a local equivalent so the services can boot.
+# Each service declares its own database through `mysql.db-name` in bootstrap.yml.
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://mysql:3306/${mysql.db-name}?useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&zeroDateTimeBehavior=convertToNull&allowMultiQueries=true
+    username: root
+    password: mysql
+    hikari:
+      minimum-idle: 1
+      maximum-pool-size: 5
+      connection-timeout: 10000
