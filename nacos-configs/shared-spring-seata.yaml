@@ -1,0 +1,8 @@
+seata:
+  enabled: false
+  tx-service-group: jzo2o-orders-group
+  service:
+    vgroup-mapping:
+      jzo2o-orders-group: default
+    grouplist:
+      default: seata:8091

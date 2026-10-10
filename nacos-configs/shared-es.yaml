@@ -1,0 +1,4 @@
+jzo2o:
+  es:
+    host: elasticsearch
+    port: 9200

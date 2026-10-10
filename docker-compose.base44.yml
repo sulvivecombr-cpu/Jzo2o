@@ -1,0 +1,474 @@
+services:
+  # ==================== Infrastructure ====================
+  nacos:
+    image: nacos/nacos-server:v2.2.3-slim
+    environment:
+      - MODE=standalone
+      - NACOS_AUTH_ENABLE=false
+      - JVM_XMS=256m
+      - JVM_XMX=256m
+      - JVM_XMN=128m
+      - JVM_MS=128m
+      - JVM_MMS=256m
+    ports:
+      - "8848:8848"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8848/nacos/ >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: on-failure
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./sql:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: on-failure
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    restart: on-failure
+
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: on-failure
+
+  elasticsearch:
+    image: elasticsearch:7.17.7
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms256m -Xmx256m
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    restart: on-failure
+
+  # ==================== Nacos Config Init ====================
+  nacos-init:
+    image: alpine:3.18
+    depends_on:
+      nacos:
+        condition: service_healthy
+    volumes:
+      - ./nacos-configs:/app/nacos-configs:ro
+      - ./scripts:/app/scripts:ro
+    command: ["sh", "-ec", "apk add --no-cache curl >/dev/null 2>&1; sh /app/scripts/nacos-init.sh"]
+    environment:
+      - NACOS_HOST=nacos
+      - NACOS_PORT=8848
+      - CONFIG_DIR=/app/nacos-configs
+    restart: "no"
+
+  # ==================== Maven Builder ====================
+  builder:
+    image: maven:3.8.6-eclipse-temurin-11
+    volumes:
+      - ./:/app
+      - maven-repo:/root/.m2
+    working_dir: /app
+    command: ["sh", "/app/scripts/build.sh"]
+    restart: "no"
+
+  # ==================== App Services ====================
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/base44-app.Dockerfile
+    volumes:
+      - ./:/app
+    working_dir: /app
+    command: ["sh", "-c", "exec java $$JAVA_OPTS -jar /app/jzo2o-gateway/target/jzo2o-gateway.jar"]
+    ports:
+      - "3000:11500"
+    environment:
+      - JAVA_OPTS=-Xmx256m
+      - SPRING_PROFILES_ACTIVE=prod
+      - NACOS_USERNAME=nacos
+      - NACOS_PASSWORD=nacos
+      - NACOS_ADDR=nacos:8848
+      - NACOS_NAMESPACE=public
+    depends_on:
+      builder:
+        condition: service_completed_successfully
+      nacos-init:
+        condition: service_completed_successfully
+      nacos:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11500/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    restart: on-failure
+
+  foundations:
+    build:
+      context: .
+      dockerfile: docker/base44-app.Dockerfile
+    volumes:
+      - ./:/app
+    working_dir: /app
+    command: ["sh", "-c", "exec java $$JAVA_OPTS -jar /app/jzo2o-foundations/target/jzo2o-foundations.jar"]
+    environment:
+      - JAVA_OPTS=-Xmx256m
+      - SPRING_PROFILES_ACTIVE=prod
+      - NACOS_USERNAME=nacos
+      - NACOS_PASSWORD=nacos
+      - NACOS_ADDR=nacos:8848
+      - NACOS_NAMESPACE=public
+    depends_on:
+      builder:
+        condition: service_completed_successfully
+      nacos-init:
+        condition: service_completed_successfully
+      nacos:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11509/foundations/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+    restart: on-failure
+
+  customer:
+    build:
+      context: .
+      dockerfile: docker/base44-app.Dockerfile
+    volumes:
+      - ./:/app
+    working_dir: /app
+    command: ["sh", "-c", "exec java $$JAVA_OPTS -jar /app/jzo2o-customer/target/jzo2o-customer.jar"]
+    environment:
+      - JAVA_OPTS=-Xmx256m
+      - SPRING_PROFILES_ACTIVE=prod
+      - NACOS_USERNAME=nacos
+      - NACOS_PASSWORD=nacos
+      - NACOS_ADDR=nacos:8848
+      - NACOS_NAMESPACE=public
+    depends_on:
+      builder:
+        condition: service_completed_successfully
+      nacos-init:
+        condition: service_completed_successfully
+      nacos:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11502/customer/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+    restart: on-failure
+
+  trade:
+    build:
+      context: .
+      dockerfile: docker/base44-app.Dockerfile
+    volumes:
+      - ./:/app
+    working_dir: /app
+    command: ["sh", "-c", "exec java $$JAVA_OPTS -jar /app/jzo2o-trade/target/jzo2o-trade.jar"]
+    environment:
+      - JAVA_OPTS=-Xmx256m
+      - SPRING_PROFILES_ACTIVE=prod
+      - NACOS_USERNAME=nacos
+      - NACOS_PASSWORD=nacos
+      - NACOS_ADDR=nacos:8848
+      - NACOS_NAMESPACE=public
+    depends_on:
+      builder:
+        condition: service_completed_successfully
+      nacos-init:
+        condition: service_completed_successfully
+      nacos:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11505/trade/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+    restart: on-failure
+
+  market:
+    build:
+      context: .
+      dockerfile: docker/base44-app.Dockerfile
+    volumes:
+      - ./:/app
+    working_dir: /app
+    command: ["sh", "-c", "exec java $$JAVA_OPTS -jar /app/jzo2o-market/target/jzo2o-market.jar"]
+    environment:
+      - JAVA_OPTS=-Xmx256m
+      - SPRING_PROFILES_ACTIVE=prod
+      - NACOS_USERNAME=nacos
+      - NACOS_PASSWORD=nacos
+      - NACOS_ADDR=nacos:8848
+      - NACOS_NAMESPACE=public
+    depends_on:
+      builder:
+        condition: service_completed_successfully
+      nacos-init:
+        condition: service_completed_successfully
+      nacos:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11510/market/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+    restart: on-failure
+
+  publics:
+    build:
+      context: .
+      dockerfile: docker/base44-app.Dockerfile
+    volumes:
+      - ./:/app
+    working_dir: /app
+    command: ["sh", "-c", "exec java $$JAVA_OPTS -jar /app/jzo2o-publics/target/jzo2o-publics.jar"]
+    environment:
+      - JAVA_OPTS=-Xmx256m
+      - SPRING_PROFILES_ACTIVE=prod
+      - NACOS_USERNAME=nacos
+      - NACOS_PASSWORD=nacos
+      - NACOS_ADDR=nacos:8848
+      - NACOS_NAMESPACE=public
+    depends_on:
+      builder:
+        condition: service_completed_successfully
+      nacos-init:
+        condition: service_completed_successfully
+      nacos:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11503/publics/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+    restart: on-failure
+
+  orders-manager:
+    build:
+      context: .
+      dockerfile: docker/base44-app.Dockerfile
+    volumes:
+      - ./:/app
+    working_dir: /app
+    command: ["sh", "-c", "exec java $$JAVA_OPTS -jar /app/jzo2o-orders/jzo2o-orders-manager/target/jzo2o-orders-manager.jar"]
+    environment:
+      - JAVA_OPTS=-Xmx256m
+      - SPRING_PROFILES_ACTIVE=prod
+      - NACOS_USERNAME=nacos
+      - NACOS_PASSWORD=nacos
+      - NACOS_ADDR=nacos:8848
+      - NACOS_NAMESPACE=public
+    depends_on:
+      builder:
+        condition: service_completed_successfully
+      nacos-init:
+        condition: service_completed_successfully
+      nacos:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11504/orders-manager/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+    restart: on-failure
+
+  orders-seize:
+    build:
+      context: .
+      dockerfile: docker/base44-app.Dockerfile
+    volumes:
+      - ./:/app
+    working_dir: /app
+    command: ["sh", "-c", "exec java $$JAVA_OPTS -jar /app/jzo2o-orders/jzo2o-orders-seize/target/jzo2o-orders-seize.jar"]
+    environment:
+      - JAVA_OPTS=-Xmx256m
+      - SPRING_PROFILES_ACTIVE=prod
+      - NACOS_USERNAME=nacos
+      - NACOS_PASSWORD=nacos
+      - NACOS_ADDR=nacos:8848
+      - NACOS_NAMESPACE=public
+    depends_on:
+      builder:
+        condition: service_completed_successfully
+      nacos-init:
+        condition: service_completed_successfully
+      nacos:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11506/orders-seize/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+    restart: on-failure
+
+  orders-dispatch:
+    build:
+      context: .
+      dockerfile: docker/base44-app.Dockerfile
+    volumes:
+      - ./:/app
+    working_dir: /app
+    command: ["sh", "-c", "exec java $$JAVA_OPTS -jar /app/jzo2o-orders/jzo2o-orders-dispatch/target/jzo2o-orders-dispatch.jar"]
+    environment:
+      - JAVA_OPTS=-Xmx256m
+      - SPRING_PROFILES_ACTIVE=prod
+      - NACOS_USERNAME=nacos
+      - NACOS_PASSWORD=nacos
+      - NACOS_ADDR=nacos:8848
+      - NACOS_NAMESPACE=public
+    depends_on:
+      builder:
+        condition: service_completed_successfully
+      nacos-init:
+        condition: service_completed_successfully
+      nacos:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11507/orders-dispatch/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+    restart: on-failure
+
+  orders-history:
+    build:
+      context: .
+      dockerfile: docker/base44-app.Dockerfile
+    volumes:
+      - ./:/app
+    working_dir: /app
+    command: ["sh", "-c", "exec java $$JAVA_OPTS -jar /app/jzo2o-orders/jzo2o-orders-history/target/jzo2o-orders-history.jar"]
+    environment:
+      - JAVA_OPTS=-Xmx256m
+      - SPRING_PROFILES_ACTIVE=prod
+      - NACOS_USERNAME=nacos
+      - NACOS_PASSWORD=nacos
+      - NACOS_ADDR=nacos:8848
+      - NACOS_NAMESPACE=public
+    depends_on:
+      builder:
+        condition: service_completed_successfully
+      nacos-init:
+        condition: service_completed_successfully
+      nacos:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11508/orders-history/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+    restart: on-failure
+
+volumes:
+  mysql-data:
+  maven-repo:

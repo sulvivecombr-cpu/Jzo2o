@@ -1,0 +1,12 @@
+job:
+  trading:
+    count: 100
+  refund:
+    count: 100
+qrcode:
+  margin: 1
+  fore-color: "#000000"
+  back-color: "#FFFFFF"
+  error-correction-level: M
+  width: 200
+  height: 200

@@ -1,0 +1,9 @@
+xxl-job:
+  enable: false
+  admin:
+    address: http://xxl-job-admin:8080/xxl-job-admin
+  executor:
+    appname: jzo2o
+    port: 9999
+    logPath: /data/logs/xxl-job
+    logRetentionDays: 30
