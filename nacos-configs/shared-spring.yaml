@@ -2,3 +2,6 @@ spring:
   jackson:
     time-zone: GMT+8
     date-format: yyyy-MM-dd HH:mm:ss
+
+jzo2o:
+  jwtKey: jzo2o-secret-key-for-jwt-token-generation

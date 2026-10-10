@@ -1,3 +1,6 @@
+rabbit-mq:
+  enable: true
+
 spring:
   rabbitmq:
     host: rabbitmq

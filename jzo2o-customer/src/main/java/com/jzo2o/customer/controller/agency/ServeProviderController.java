@@ -39,12 +39,6 @@ public class ServeProviderController {
     }
 
 
-    @PostMapping("/institution/resetPassword")
-    @ApiOperation("机构登录密码重置")
-    public void institutionResetPassword(@RequestBody InstitutionRegisterReqDTO institutionRegisterReqDTO) {
-        serveProviderService.institutionResetPassword(institutionRegisterReqDTO);
-    }
-
 }
 
 

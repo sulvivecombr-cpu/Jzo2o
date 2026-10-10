@@ -15,6 +15,9 @@ cd /app/jzo2o-gateway && mvn package -DskipTests -q
 echo "=== Building jzo2o-foundations ==="
 cd /app/jzo2o-foundations && mvn package -DskipTests -q
 
+echo "=== Installing evaluation-sdk stub ==="
+cd /app/lib/evaluation-sdk && mvn install -DskipTests -q
+
 echo "=== Building jzo2o-customer ==="
 cd /app/jzo2o-customer && mvn package -DskipTests -q
 

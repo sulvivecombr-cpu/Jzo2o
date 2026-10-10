@@ -1,0 +1,7 @@
+jzo2o:
+  jwtKey: jzo2o-secret-key-for-jwt-token-generation
+  tokenKey:
+    "1": jzo2o-secret-key-for-jwt-token-generation
+    "2": jzo2o-secret-key-for-jwt-token-generation
+    "3": jzo2o-secret-key-for-jwt-token-generation
+    "4": jzo2o-secret-key-for-jwt-token-generation
